@@ -5,7 +5,7 @@ open SkkKanaGenerator.Kana
 
 let private convertHira (table: Map<string, string>) (hira: string) =
     hira.ToCharArray()
-    |> Array.map (fun c -> table[c.ToString()])
+    |> Array.map (fun c -> Map.tryFind (c.ToString()) table |> Option.defaultValue (c.ToString()))
     |> String.concat ""
 
 let parseLine line =
@@ -42,7 +42,13 @@ let parseLine line =
                   Kata = kata
                   HanKata = hanKata
                   Okuri = okuri }
-        | _ -> failwith "Invalid line format"
+        | _ -> failwith "Invalid line"
 
 let parseFile path =
-    System.IO.File.ReadAllLines(path) |> Array.map parseLine
+    System.IO.File.ReadAllLines(path)
+    |> Array.mapi (fun i line ->
+        try
+            parseLine line
+        with e ->
+            eprintfn $"{e.Message} at line {i}: {line}"
+            exit 1)
