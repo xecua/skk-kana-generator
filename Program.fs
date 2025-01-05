@@ -28,17 +28,17 @@ let main _ =
             eprintfn "%s" e.Message
             exit 1
 
-    let includeComment = result.Contains No_Comment |> not
+    let excludeComment = result.Contains No_Comment
     let inputPath = result.GetResult(Input, "/dev/stdin")
 
     let formatter: Formatter =
         match (result.GetResult Format) with
-        | AquaSkk -> new AquaSkkFormatter(includeComment)
-        | MacSKK -> new MacSkkFormatter(includeComment)
+        | AquaSkk -> new AquaSkkFormatter(excludeComment)
+        | MacSKK -> new MacSkkFormatter(excludeComment)
         | Libskk -> new LibskkFormatter()
-        | Libcskk -> new LibcskkFormatter(includeComment)
+        | Libcskk -> new LibcskkFormatter(excludeComment)
         | CorvusSKK -> new CorvusSkkFormatter()
-        | Skkeleton -> new SkkeletonFormatter(includeComment)
+        | Skkeleton -> new SkkeletonFormatter(excludeComment)
 
     SkkKanaGenerator.InputParser.parseFile inputPath
     |> formatter.formatLines

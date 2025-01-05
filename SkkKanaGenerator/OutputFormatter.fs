@@ -5,8 +5,8 @@ open SkkKanaGenerator.Kana
 
 // 将来的には入力側も
 [<AbstractClass>]
-type Formatter(includeComment: bool) =
-    member internal this.includeComment = includeComment
+type Formatter(excludeComment: bool) =
+    member internal this.excludeComment = excludeComment
 
     abstract member formatRule: Rule -> string
 
@@ -18,10 +18,10 @@ type Formatter(includeComment: bool) =
     default this.formatLine line =
         match line with
         | Comment c ->
-            if this.includeComment then
-                Some(this.formatComment c)
-            else
+            if this.excludeComment then
                 None
+            else
+                Some(this.formatComment c)
         | Rule r -> Some(this.formatRule r)
         | Empty -> Some ""
 
@@ -31,14 +31,14 @@ type Formatter(includeComment: bool) =
         lines |> Seq.choose this.formatLine |> String.concat "\n"
 
 [<Class>]
-type AquaSkkFormatter(includeComment: bool) =
+type AquaSkkFormatter(excludeComment: bool) =
     // https://github.com/codefirst/aquaskk/blob/master/data/config/kana-rule.conf
     // 改行コードはLF、文字コードはEUC-JP
     // コメントは#
     // ,はRomに限り使用可能で、`&comma;`と記述
     // Okuriはある場合のみ記述する。それ以外は必要
 
-    inherit Formatter(includeComment)
+    inherit Formatter(excludeComment)
 
     let formatRom (rom: string) =
         rom.ToCharArray()
@@ -60,12 +60,12 @@ type AquaSkkFormatter(includeComment: bool) =
             okuri
 
 [<Class>]
-type MacSkkFormatter(includeComment: bool) =
+type MacSkkFormatter(excludeComment: bool) =
     // https://github.com/mtgto/macSKK/blob/main/macSKK/kana-rule.conf
     // 改行コードはLF、文字コードはBOMなしのUTF-8
     // :,<shift>;と書くことで:をs-;扱いできる。こういうのどうしよう
 
-    inherit Formatter(includeComment)
+    inherit Formatter(excludeComment)
 
     let formatRom (rom: string) =
         rom.ToCharArray()
@@ -113,12 +113,12 @@ type LibskkFormatter() =
         + "}"
 
 [<Class>]
-type LibcskkFormatter(includeComment: bool) =
+type LibcskkFormatter(excludeComment: bool) =
     // https://github.com/naokiri/cskk/blob/master/assets/rules/default/rule.toml
     // toml
     // libxkbcommonのkeysymsに一致するシーケンスは間にスペースを入れる必要がある
     // 個別に対応するのは大変なので全部スペース区切りにする
-    inherit Formatter(includeComment)
+    inherit Formatter(excludeComment)
 
     let formatRom (rom: string) =
         rom.ToCharArray()
@@ -180,11 +180,11 @@ type CorvusSkkFormatter() =
         raise (System.NotImplementedException())
 
 [<Class>]
-type SkkeletonFormatter(includeComment: bool) =
+type SkkeletonFormatter(excludeComment: bool) =
     // VimかLua (register_kanatableの引数)。
     // 一応独自もある
     // これでパースできる形 https://github.com/vim-skk/skkeleton/blob/954f2f96e74a0c409f12315278fb1bbef0286b60/denops/skkeleton/kana.ts#L65
-    inherit Formatter(includeComment)
+    inherit Formatter(excludeComment)
 
     override this.formatRule(arg: Rule) : string =
         raise (System.NotImplementedException())
