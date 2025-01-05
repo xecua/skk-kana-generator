@@ -1,25 +1,35 @@
 module SkkKanaGenerator.OutputFormatter
 
 open SkkKanaGenerator.Types
+open SkkKanaGenerator.Kana
 
 // 将来的には入力側も
 [<AbstractClass>]
 type Formatter(includeComment: bool) =
     member internal this.includeComment = includeComment
 
-    abstract member convertRule: Rule -> string
+    abstract member formatRule: Rule -> string
 
-    member this.convertLine(line: Line) : string option =
+    abstract member formatComment: string -> string
+    default this.formatComment comment = sprintf "# %s" comment
+
+    abstract member formatLine: Line -> string option
+
+    default this.formatLine line =
         match line with
-        | Comment c -> if this.includeComment then Some c else None
-        | Rule r -> this.convertRule r |> Some
+        | Comment c ->
+            if this.includeComment then
+                Some(this.formatComment c)
+            else
+                None
+        | Rule r -> Some(this.formatRule r)
         | Empty -> Some ""
 
-    member this.convertLines = Seq.choose this.convertLine
-
     // jsonとかならオーバーライドが必要
-    member this.format rules =
-        rules |> this.convertLines |> String.concat "\n"
+    abstract member formatLines: Line seq -> string
+
+    default this.formatLines lines =
+        lines |> Seq.choose this.formatLine |> String.concat "\n"
 
 [<Class>]
 type AquaSkkFormatter(includeComment: bool) =
@@ -31,7 +41,7 @@ type AquaSkkFormatter(includeComment: bool) =
 
     inherit Formatter(includeComment)
 
-    override this.convertRule(arg: Rule) : string =
+    override this.formatRule(arg: Rule) : string =
         raise (System.NotImplementedException())
 
 [<Class>]
@@ -43,28 +53,44 @@ type MacSkkFormatter(includeComment: bool) =
     // Kata以降は省略可能。
     inherit Formatter(includeComment)
 
-    override this.convertRule(arg: Rule) : string =
+    override this.formatRule(arg: Rule) : string =
         raise (System.NotImplementedException())
 
 [<Class>]
-type LibskkFormatter(includeComment: bool) =
+type LibskkFormatter() =
     // https://github.com/ueno/libskk/blob/master/rules/README.rules
-    // JSON
+    // JSONなのでコメントは不可
     // 入力 -> ["Okuri", "Hira"] (KataとHanKataは省略可能)
     // 一部特殊入力は可能
-    inherit Formatter(includeComment)
+    inherit Formatter(false)
 
-    override this.convertRule(arg: Rule) : string =
-        raise (System.NotImplementedException())
+    override this.formatRule rule =
+        let okuri = Option.defaultValue "" rule.Okuri
+        sprintf """"%s": ["%s", "%s"]""" rule.Rom okuri rule.Hira
+
+    override this.formatLine line =
+        match line with
+        | Rule r -> Some(this.formatRule r)
+        | _ -> None
+
+    override this.formatLines lines =
+        "{\n"
+        + "  \"define\": [\n"
+        + (lines
+           |> Seq.choose this.formatLine
+           |> Seq.map (fun s -> "    " + s)
+           |> String.concat ",\n")
+        + "\n  ]\n"
+        + "}"
 
 [<Class>]
 type LibcskkFormatter(includeComment: bool) =
     // https://github.com/naokiri/cskk/blob/master/assets/rules/default/rule.toml
     // toml
-    // 結構特殊。~~めんどい~~
+    // 結構特殊。
     inherit Formatter(includeComment)
 
-    override this.convertRule(arg: Rule) : string =
+    override this.formatRule(arg: Rule) : string =
         raise (System.NotImplementedException())
 
 [<Class>]
@@ -76,7 +102,7 @@ type CorvusSkkFormatter() =
     // 独自の方はコメントは出力できない
     inherit Formatter(false)
 
-    override this.convertRule(arg: Rule) : string =
+    override this.formatRule(arg: Rule) : string =
         raise (System.NotImplementedException())
 
 [<Class>]
@@ -86,5 +112,5 @@ type SkkeletonFormatter(includeComment: bool) =
     // これでパースできる形 https://github.com/vim-skk/skkeleton/blob/954f2f96e74a0c409f12315278fb1bbef0286b60/denops/skkeleton/kana.ts#L65
     inherit Formatter(includeComment)
 
-    override this.convertRule(arg: Rule) : string =
+    override this.formatRule(arg: Rule) : string =
         raise (System.NotImplementedException())

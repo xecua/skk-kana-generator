@@ -5,9 +5,7 @@ module SkkKanaGenerator.Types
 type Rule =
     { Rom: string
       Hira: string
-      Kata: string
-      HanKata: string
-      Okuri: string }
+      Okuri: option<string> }
 
 // 入力の行
 type Line =

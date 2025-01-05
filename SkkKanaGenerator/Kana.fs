@@ -1,5 +1,10 @@
 module SkkKanaGenerator.Kana
 
+let convertHira (table: Map<string, string>) (hira: string) =
+    hira.ToCharArray()
+    |> Array.map (fun c -> Map.tryFind (c.ToString()) table |> Option.defaultValue (c.ToString()))
+    |> String.concat ""
+
 let hiraToKana =
     Map
         [ ("あ", "ア")
