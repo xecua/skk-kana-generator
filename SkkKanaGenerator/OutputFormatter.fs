@@ -4,6 +4,7 @@ open SkkKanaGenerator.Types
 open SkkKanaGenerator.Kana
 
 // 将来的には入力側も
+// 判別共用体にできるならしたい。できるかな
 [<AbstractClass>]
 type Formatter(excludeComment: bool) =
     member internal this.excludeComment = excludeComment
@@ -34,9 +35,7 @@ type Formatter(excludeComment: bool) =
 type AquaSkkFormatter(excludeComment: bool) =
     // https://github.com/codefirst/aquaskk/blob/master/data/config/kana-rule.conf
     // 改行コードはLF、文字コードはEUC-JP
-    // コメントは#
     // ,はRomに限り使用可能で、`&comma;`と記述
-    // Okuriはある場合のみ記述する。それ以外は必要
 
     inherit Formatter(excludeComment)
 
@@ -91,6 +90,7 @@ type MacSkkFormatter(excludeComment: bool) =
 [<Class>]
 type LibskkFormatter() =
     // https://github.com/ueno/libskk/blob/master/rules/README.rules
+
     inherit Formatter(false)
 
     override this.formatRule rule =
@@ -115,11 +115,11 @@ type LibskkFormatter() =
 [<Class>]
 type LibcskkFormatter(excludeComment: bool) =
     // https://github.com/naokiri/cskk/blob/master/assets/rules/default/rule.toml
-    // toml
-    // libxkbcommonのkeysymsに一致するシーケンスは間にスペースを入れる必要がある
-    // 個別に対応するのは大変なので全部スペース区切りにする
+
     inherit Formatter(excludeComment)
 
+    // libxkbcommonのkeysymsに一致するシーケンスは間にスペースを入れる必要がある。
+    // 個別に対応するのは大変なので全部スペース区切りにする
     let formatRom (rom: string) =
         rom.ToCharArray()
         |> Seq.map (fun c ->
@@ -167,24 +167,97 @@ type LibcskkFormatter(excludeComment: bool) =
     override this.formatLines lines =
         "[conversion]\n" + (lines |> Seq.choose this.formatLine |> String.concat "\n")
 
+
+type CorvusSKKStyle =
+    | Xml
+    | Original
+
 [<Class>]
-type CorvusSkkFormatter() =
+type CorvusSkkFormatter(excludeComment: bool, style: string) =
     // https://github.com/nathancorvussolis/corvusskk/blob/master/installer/config-sample/config%20-%20kana.xml
-    // XML
-    // または独自。こっちのがいいか
+    // XMLまたは独自(KanaTableファイル)
     // https://github.com/nathancorvussolis/corvusskk?tab=readme-ov-file#kanatable%E3%83%95%E3%82%A1%E3%82%A4%E3%83%AB
-    // 独自の方はコメントは出力できない
-    inherit Formatter(false)
+    // romは一部エスケープが必要っぽい。lt,quot,amp。一般のhtmlspecialchars?
 
-    override this.formatRule(arg: Rule) : string =
-        raise (System.NotImplementedException())
+    // 独自の方はコメントは出力できない
+    inherit Formatter(excludeComment || style = "original")
+
+    let style =
+        match style with
+        | "xml" -> CorvusSKKStyle.Xml
+        | "original" -> CorvusSKKStyle.Original
+        | _ ->
+            eprintfn "--style value must be 'xml' or 'original'"
+            exit 1
+
+    // XMLに限り<と"と&はエスケープ必要。'と>は不要っぽい
+    let formatRom (rom: string) =
+        if style.IsOriginal then
+            rom
+        else
+            rom.ToCharArray()
+            |> Seq.map (fun c ->
+                match c with
+                | '<' -> "&lt;"
+                | '"' -> "&quot;"
+                | '&' -> "&amp;"
+                | c -> c.ToString())
+            |> String.concat ""
+
+    override this.formatComment comment = sprintf "<!-- %s -->" comment
+
+    override this.formatRule rule =
+        match style with
+        | CorvusSKKStyle.Xml ->
+            sprintf
+                """<row ro="%s" hi="%s" ka="%s" an="%s" so="%d" />"""
+                (formatRom rule.Rom)
+                rule.Hira
+                (convertHira hiraToKana rule.Hira)
+                (convertHira hiraToHanKata rule.Hira)
+                (if rule.Okuri.IsSome then 1 else 0) // たぶんokuriって促音しかない
+
+        | CorvusSKKStyle.Original ->
+            sprintf
+                "%s\t%s\t%s\t%s\t%d"
+                (formatRom rule.Rom)
+                rule.Hira
+                (convertHira hiraToKana rule.Hira)
+                (convertHira hiraToHanKata rule.Hira)
+                (if rule.Okuri.IsSome then 1 else 0) // たぶんokuriって促音しかない
+
+    override this.formatLines lines =
+        match style with
+        | CorvusSKKStyle.Xml ->
+            "  <section name=\"kana\">\n"
+            + "    <list>\n"
+            + (lines
+               |> Seq.choose this.formatLine
+               |> Seq.map (fun s -> "      " + s)
+               |> String.concat "\n")
+            + "\n    </list>\n"
+            + "  </section>"
+        | CorvusSKKStyle.Original -> base.formatLines lines
+
+type SkkeletonStyle =
+    | Vim
+    | Lua
+    | Original
 
 [<Class>]
-type SkkeletonFormatter(excludeComment: bool) =
-    // VimかLua (register_kanatableの引数)。
-    // 一応独自もある
-    // これでパースできる形 https://github.com/vim-skk/skkeleton/blob/954f2f96e74a0c409f12315278fb1bbef0286b60/denops/skkeleton/kana.ts#L65
+type SkkeletonFormatter(excludeComment: bool, style: string) =
+    // VimかLua (register_kanatableの引数)。一応独自もある
+    // 独自はこれでパースできる形(コメントも可っぽい) https://github.com/vim-skk/skkeleton/blob/954f2f96e74a0c409f12315278fb1bbef0286b60/denops/skkeleton/kana.ts#L65
     inherit Formatter(excludeComment)
 
-    override this.formatRule(arg: Rule) : string =
+    let style =
+        match style with
+        | "vim" -> SkkeletonStyle.Vim
+        | "lua" -> SkkeletonStyle.Lua
+        | "original" -> SkkeletonStyle.Original
+        | _ ->
+            eprintfn "--style value must be one of 'vim', 'lua', or 'original'"
+            exit 1
+
+    override this.formatRule rule =
         raise (System.NotImplementedException())

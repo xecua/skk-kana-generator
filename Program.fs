@@ -7,6 +7,7 @@ open SkkKanaGenerator.OutputFormatter
 type Arguments =
     | [<ExactlyOnce>] Format of OutputFormat
     | [<MainCommand>] Input of path: string
+    | Style of string
     | No_Comment
 
     interface IArgParserTemplate with
@@ -14,6 +15,7 @@ type Arguments =
             match this with
             | Format _ -> "output format"
             | Input _ -> "input file path"
+            | Style _ -> "style (CorvusSKK: xml, original(default) / skkeleton: vim, lua, original(default))"
             | No_Comment -> "exclude comments"
 
 
@@ -30,6 +32,7 @@ let main _ =
 
     let excludeComment = result.Contains No_Comment
     let inputPath = result.GetResult(Input, "/dev/stdin")
+    let style = result.TryGetResult Style |> Option.defaultValue "original"
 
     let formatter: Formatter =
         match (result.GetResult Format) with
@@ -37,8 +40,8 @@ let main _ =
         | MacSKK -> new MacSkkFormatter(excludeComment)
         | Libskk -> new LibskkFormatter()
         | Libcskk -> new LibcskkFormatter(excludeComment)
-        | CorvusSKK -> new CorvusSkkFormatter()
-        | Skkeleton -> new SkkeletonFormatter(excludeComment)
+        | CorvusSKK -> new CorvusSkkFormatter(excludeComment, style)
+        | Skkeleton -> new SkkeletonFormatter(excludeComment, style)
 
     SkkKanaGenerator.InputParser.parseFile inputPath
     |> formatter.formatLines
