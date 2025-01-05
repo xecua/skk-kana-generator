@@ -25,7 +25,6 @@ type Formatter(includeComment: bool) =
         | Rule r -> Some(this.formatRule r)
         | Empty -> Some ""
 
-    // jsonとかならオーバーライドが必要
     abstract member formatLines: Line seq -> string
 
     default this.formatLines lines =
@@ -37,31 +36,61 @@ type AquaSkkFormatter(includeComment: bool) =
     // 改行コードはLF、文字コードはEUC-JP
     // コメントは#
     // ,はRomに限り使用可能で、`&comma;`と記述
-    // Okuriはある場合のみ記述する
+    // Okuriはある場合のみ記述する。それ以外は必要
 
     inherit Formatter(includeComment)
 
-    override this.formatRule(arg: Rule) : string =
-        raise (System.NotImplementedException())
+    let formatRom (rom: string) =
+        rom.ToCharArray()
+        |> Seq.map (fun c ->
+            match c with
+            | ',' -> "&comma;"
+            | _ -> c.ToString())
+        |> String.concat ""
+
+    override this.formatRule rule =
+        let okuri = rule.Okuri |> Option.map (fun c -> "," + c) |> Option.defaultValue ""
+
+        sprintf
+            "%s,%s,%s,%s%s"
+            (formatRom rule.Rom)
+            rule.Hira
+            (convertHira hiraToKana rule.Hira)
+            (convertHira hiraToHanKata rule.Hira)
+            okuri
 
 [<Class>]
 type MacSkkFormatter(includeComment: bool) =
     // https://github.com/mtgto/macSKK/blob/main/macSKK/kana-rule.conf
     // 改行コードはLF、文字コードはBOMなしのUTF-8
-    // コメントは#
-    // ,は`&comma;`と記述。#は`&sharp;`と記述。
-    // Kata以降は省略可能。
+    // :,<shift>;と書くことで:をs-;扱いできる。こういうのどうしよう
+
     inherit Formatter(includeComment)
 
-    override this.formatRule(arg: Rule) : string =
-        raise (System.NotImplementedException())
+    let formatRom (rom: string) =
+        rom.ToCharArray()
+        |> Seq.map (fun c ->
+            match c with
+            | ',' -> "&comma;"
+            | '#' -> "&sharp;"
+            | _ -> c.ToString())
+        |> String.concat ""
+
+    override this.formatRule rule =
+        match rule.Okuri with
+        | Some okuri ->
+            (sprintf
+                "%s,%s,%s,%s,%s"
+                (formatRom rule.Rom)
+                rule.Hira
+                (convertHira hiraToKana rule.Hira)
+                (convertHira hiraToHanKata rule.Hira)
+                okuri)
+        | None -> (sprintf "%s,%s" (formatRom rule.Rom) rule.Hira)
 
 [<Class>]
 type LibskkFormatter() =
     // https://github.com/ueno/libskk/blob/master/rules/README.rules
-    // JSONなのでコメントは不可
-    // 入力 -> ["Okuri", "Hira"] (KataとHanKataは省略可能)
-    // 一部特殊入力は可能
     inherit Formatter(false)
 
     override this.formatRule rule =
@@ -87,11 +116,56 @@ type LibskkFormatter() =
 type LibcskkFormatter(includeComment: bool) =
     // https://github.com/naokiri/cskk/blob/master/assets/rules/default/rule.toml
     // toml
-    // 結構特殊。
+    // libxkbcommonのkeysymsに一致するシーケンスは間にスペースを入れる必要がある
+    // 個別に対応するのは大変なので全部スペース区切りにする
     inherit Formatter(includeComment)
 
-    override this.formatRule(arg: Rule) : string =
-        raise (System.NotImplementedException())
+    let formatRom (rom: string) =
+        rom.ToCharArray()
+        |> Seq.map (fun c ->
+            match c with
+            | ' ' -> "space"
+            | '!' -> "exclam"
+            | '"' -> "quotedbl"
+            | '#' -> "numbersign"
+            | '$' -> "dollar"
+            | '%' -> "percent"
+            | '&' -> "ampersand"
+            | '\'' -> "apostrophe"
+            | '(' -> "parenleft"
+            | ')' -> "parenright"
+            | '*' -> "asterisk"
+            | '+' -> "plus"
+            | ',' -> "comma"
+            | '-' -> "minus"
+            | '.' -> "period"
+            | '/' -> "slash"
+            | ':' -> "colon"
+            | ';' -> "semicolon"
+            | '<' -> "less"
+            | '=' -> "equal"
+            | '>' -> "greater"
+            | '?' -> "question"
+            | '@' -> "at"
+            | '[' -> "bracketleft"
+            | '\\' -> "backslash"
+            | ']' -> "bracketright"
+            | '^' -> "asciicircum"
+            | '_' -> "underscore"
+            | '`' -> "grave"
+            | '{' -> "braceleft"
+            | '|' -> "bar"
+            | '}' -> "braceright"
+            | '~' -> "asciitilde"
+            | c -> c.ToString())
+        |> String.concat " "
+
+    override this.formatRule rule =
+        let okuri = Option.defaultValue "" rule.Okuri
+        sprintf """"%s" = ["%s", "%s"] """ (formatRom rule.Rom) okuri rule.Hira
+
+    override this.formatLines lines =
+        "[conversion]\n" + (lines |> Seq.choose this.formatLine |> String.concat "\n")
 
 [<Class>]
 type CorvusSkkFormatter() =
