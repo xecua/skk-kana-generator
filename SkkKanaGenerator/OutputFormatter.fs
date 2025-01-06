@@ -3,16 +3,16 @@ module SkkKanaGenerator.OutputFormatter
 open SkkKanaGenerator.Types
 open SkkKanaGenerator.Kana
 
-// 将来的には入力側も
+// 将来的には入力側も?
 // 判別共用体にできるならしたい。できるかな
 [<AbstractClass>]
 type Formatter(excludeComment: bool) =
-    member internal this.excludeComment = excludeComment
+    member internal _.excludeComment = excludeComment
 
     abstract member formatRule: Rule -> string
 
     abstract member formatComment: string -> string
-    default this.formatComment comment = sprintf "# %s" comment
+    default _.formatComment comment = sprintf "# %s" comment
 
     abstract member formatLine: Line -> string option
 
@@ -47,7 +47,7 @@ type AquaSkkFormatter(excludeComment: bool) =
             | _ -> c.ToString())
         |> String.concat ""
 
-    override this.formatRule rule =
+    override _.formatRule rule =
         let okuri = rule.Okuri |> Option.map (fun c -> "," + c) |> Option.defaultValue ""
 
         sprintf
@@ -62,7 +62,7 @@ type AquaSkkFormatter(excludeComment: bool) =
 type MacSkkFormatter(excludeComment: bool) =
     // https://github.com/mtgto/macSKK/blob/main/macSKK/kana-rule.conf
     // 改行コードはLF、文字コードはBOMなしのUTF-8
-    // :,<shift>;と書くことで:をs-;扱いできる。こういうのどうしよう
+    // :,<shift>;と書くことで:をs-;扱いできる。このあたりの対応は未定
 
     inherit Formatter(excludeComment)
 
@@ -75,7 +75,7 @@ type MacSkkFormatter(excludeComment: bool) =
             | _ -> c.ToString())
         |> String.concat ""
 
-    override this.formatRule rule =
+    override _.formatRule rule =
         match rule.Okuri with
         | Some okuri ->
             (sprintf
@@ -93,7 +93,7 @@ type LibskkFormatter() =
 
     inherit Formatter(false)
 
-    override this.formatRule rule =
+    override _.formatRule rule =
         let okuri = Option.defaultValue "" rule.Okuri
         sprintf """"%s": ["%s", "%s"]""" rule.Rom okuri rule.Hira
 
@@ -106,8 +106,11 @@ type LibskkFormatter() =
         "{\n"
         + "  \"define\": [\n"
         + (lines
-           |> Seq.choose this.formatLine
-           |> Seq.map (fun s -> "    " + s)
+           |> Seq.choose (fun line ->
+               match line with
+               | Empty -> None // TODO: 空行にする(カンマの挿入を回避する必要がある)
+               | Comment _ -> None
+               | Rule r -> Some("    " + (this.formatRule r)))
            |> String.concat ",\n")
         + "\n  ]\n"
         + "}"
@@ -160,7 +163,7 @@ type LibcskkFormatter(excludeComment: bool) =
             | c -> c.ToString())
         |> String.concat " "
 
-    override this.formatRule rule =
+    override _.formatRule rule =
         let okuri = Option.defaultValue "" rule.Okuri
         sprintf """"%s" = ["%s", "%s"] """ (formatRom rule.Rom) okuri rule.Hira
 
@@ -168,7 +171,7 @@ type LibcskkFormatter(excludeComment: bool) =
         "[conversion]\n" + (lines |> Seq.choose this.formatLine |> String.concat "\n")
 
 
-type CorvusSKKStyle =
+type private CorvusSKKStyle =
     | Xml
     | Original
 
@@ -176,8 +179,7 @@ type CorvusSKKStyle =
 type CorvusSkkFormatter(excludeComment: bool, style: string) =
     // https://github.com/nathancorvussolis/corvusskk/blob/master/installer/config-sample/config%20-%20kana.xml
     // XMLまたは独自(KanaTableファイル)
-    // https://github.com/nathancorvussolis/corvusskk?tab=readme-ov-file#kanatable%E3%83%95%E3%82%A1%E3%82%A4%E3%83%AB
-    // romは一部エスケープが必要っぽい。lt,quot,amp。一般のhtmlspecialchars?
+    // 独自ファイルの形式は https://github.com/nathancorvussolis/corvusskk?tab=readme-ov-file#kanatable%E3%83%95%E3%82%A1%E3%82%A4%E3%83%AB
 
     // 独自の方はコメントは出力できない
     inherit Formatter(excludeComment || style = "original")
@@ -190,7 +192,7 @@ type CorvusSkkFormatter(excludeComment: bool, style: string) =
             eprintfn "--style value must be 'xml' or 'original'"
             exit 1
 
-    // XMLに限り<と"と&はエスケープ必要。'と>は不要っぽい
+    // XMLに限り<と"と&はエスケープ必要。'と>は不要
     let formatRom (rom: string) =
         if style.IsOriginal then
             rom
@@ -204,9 +206,9 @@ type CorvusSkkFormatter(excludeComment: bool, style: string) =
                 | c -> c.ToString())
             |> String.concat ""
 
-    override this.formatComment comment = sprintf "<!-- %s -->" comment
+    override _.formatComment comment = sprintf "<!-- %s -->" comment
 
-    override this.formatRule rule =
+    override _.formatRule rule =
         match style with
         | CorvusSKKStyle.Xml ->
             sprintf
@@ -239,25 +241,64 @@ type CorvusSkkFormatter(excludeComment: bool, style: string) =
             + "  </section>"
         | CorvusSKKStyle.Original -> base.formatLines lines
 
-type SkkeletonStyle =
+type private SkkeletonStyle =
     | Vim
     | Lua
-    | Original
+// TODO: vim9?
 
 [<Class>]
 type SkkeletonFormatter(excludeComment: bool, style: string) =
-    // VimかLua (register_kanatableの引数)。一応独自もある
-    // 独自はこれでパースできる形(コメントも可っぽい) https://github.com/vim-skk/skkeleton/blob/954f2f96e74a0c409f12315278fb1bbef0286b60/denops/skkeleton/kana.ts#L65
+    // VimかLua (register_kanatableの引数)。一応個別ファイルがあるが、Okuriが記述できない
+    // vimscriptは行継続にクセあり。特にコメント。 |line-continuation-comment|
+    // 関数にマッピングすることもできるが対応は未定
     inherit Formatter(excludeComment)
 
     let style =
         match style with
         | "vim" -> SkkeletonStyle.Vim
         | "lua" -> SkkeletonStyle.Lua
-        | "original" -> SkkeletonStyle.Original
         | _ ->
-            eprintfn "--style value must be one of 'vim', 'lua', or 'original'"
+            eprintfn "--style value must be one of 'vim', 'lua'"
             exit 1
 
-    override this.formatRule rule =
-        raise (System.NotImplementedException())
+    override _.formatComment comment =
+        (match style with
+         | SkkeletonStyle.Vim -> "\" "
+         | SkkeletonStyle.Lua -> "-- ")
+        + comment
+
+    override _.formatRule rule =
+        let okuri =
+            rule.Okuri |> Option.map (fun c -> ", \"" + c + "\"") |> Option.defaultValue ""
+
+        match style with
+        | SkkeletonStyle.Vim -> sprintf """"%s": ["%s"%s]""" rule.Rom rule.Hira okuri
+        | SkkeletonStyle.Lua -> sprintf """["%s"] = {"%s"%s}""" rule.Rom rule.Hira okuri
+
+
+    override this.formatLines(lines: Line seq) : string =
+        match style with
+        | SkkeletonStyle.Vim ->
+            "{\n"
+            + (lines
+               |> Seq.choose (fun line ->
+                   match line with
+                   | Empty -> Some "\\  \n" // 空行でも冒頭の\は必要
+                   | Comment c ->
+                       if this.excludeComment then
+                           None
+                       else
+                           Some("\"\\ " + c + "\n") // 行継続中のコメントは"\ ではじめる。formatCommentの出番はない
+                   | Rule r -> Some("\\  " + (this.formatRule r) + ",\n"))
+               |> String.concat "")
+            + "\\ }"
+        | SkkeletonStyle.Lua ->
+            "{\n"
+            + (lines
+               |> Seq.choose (fun line ->
+                   match line with
+                   | Empty -> Some "  \n"
+                   | Comment c -> if this.excludeComment then None else Some("  " + c + "\n")
+                   | Rule r -> Some("  " + (this.formatRule r) + ",\n"))
+               |> String.concat "")
+            + "}"
